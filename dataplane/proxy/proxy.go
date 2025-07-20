@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/panjf2000/gnet/v2"
 	"github.com/sirupsen/logrus"
@@ -100,7 +99,8 @@ func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 
 	// 按需建立连接
 	if connCtx.conn == nil {
-		conn, err := net.DialTimeout("tcp", connCtx.destAddr, 2*time.Second)
+		d := &net.Dialer{}
+		conn, err := d.Dial("tcp", connCtx.destAddr)
 		if err != nil {
 			logrus.Errorf("failed to connect to %v: %v", connCtx.destAddr, err)
 			return gnet.Close
