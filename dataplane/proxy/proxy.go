@@ -108,6 +108,14 @@ func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		c.SetContext(connCtx)
 	}
 
+	data, err := c.Next(-1)
+	if err != nil {
+		logrus.Errorf("failed to read data from connection: %v", err)
+		return gnet.Close
+	}
+
+	c.Write(data)
+
 	// // TODO 防止协程无限扩张
 	// // src -> dst
 	// go func() {
@@ -129,8 +137,10 @@ func (p *Proxy) OnClose(c gnet.Conn, _ error) (action gnet.Action) {
 		logrus.Errorf("failed to cast ConnContext to ConnContext")
 		return
 	}
+	if connCtx.conn != nil {
+		connCtx.conn.Close()
+	}
 
-	connCtx.conn.Close()
 	return
 }
 
