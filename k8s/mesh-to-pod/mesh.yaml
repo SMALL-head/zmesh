@@ -15,11 +15,11 @@ spec:
           - NET_RAW
     resources:
       limits:
-        memory: "128Mi"
-        cpu: "500m"
+        memory: "1024Mi"
+        cpu: "1000m"
       requests:
-        memory: "64Mi"
-        cpu: "250m"
+        memory: "1024Mi"
+        cpu: "1000m"
     command: ["tail", "-f", "/dev/null"]
   - name: sidecar-container
     securityContext:

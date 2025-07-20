@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"github.com/panjf2000/gnet/v2"
 	"github.com/sirupsen/logrus"
-	"io"
+
 	"net"
 	"syscall"
-	"time"
 )
 
 const (
@@ -80,37 +79,37 @@ func (p *Proxy) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 		return nil, gnet.Close
 	}
 	logrus.Infof("[OnOpen]: origin dst: %s", dst)
-	connToRealEnd, err := net.DialTimeout("tcp", dst, 2*time.Second)
-	if err != nil {
-		logrus.Errorf("failed to connect to %v: %v", dst, err)
-		return nil, gnet.Close
-	}
+	// connToRealEnd, err := net.DialTimeout("tcp", dst, 2*time.Second)
+	// if err != nil {
+	// 	logrus.Errorf("failed to connect to %v: %v", dst, err)
+	// 	return nil, gnet.Close
+	// }
 
-	connCtx := ConnContext{conn: connToRealEnd}
-	c.SetContext(connCtx)
+	// connCtx := ConnContext{conn: connToRealEnd}
+	// c.SetContext(connCtx)
 	return
 }
 
 func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	// TODO 至真实服务器中
-	logrus.Infof("[OnTraffic] - traffic on %s", c.RemoteAddr().String())
-	cc := c.Context()
-	connCtx, ok := cc.(ConnContext)
-	if !ok {
-		logrus.Errorf("failed to cast ConnContext to ConnContext")
-		return gnet.Close
-	}
+	// logrus.Infof("[OnTraffic] - traffic on %s", c.RemoteAddr().String())
+	// cc := c.Context()
+	// connCtx, ok := cc.(ConnContext)
+	// if !ok {
+	// 	logrus.Errorf("failed to cast ConnContext to ConnContext")
+	// 	return gnet.Close
+	// }
 
-	// TODO 防止协程无限扩张
-	// src -> dst
-	go func() {
-		io.Copy(connCtx.conn, c)
-	}()
+	// // TODO 防止协程无限扩张
+	// // src -> dst
+	// go func() {
+	// 	io.Copy(connCtx.conn, c)
+	// }()
 
-	// dst -> src
-	go func() {
-		io.Copy(c, connCtx.conn)
-	}()
+	// // dst -> src
+	// go func() {
+	// 	io.Copy(c, connCtx.conn)
+	// }()
 
 	return
 }
