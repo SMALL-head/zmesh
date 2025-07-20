@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/panjf2000/gnet/v2"
@@ -108,24 +109,16 @@ func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		c.SetContext(connCtx)
 	}
 
-	data, err := c.Next(-1)
-	if err != nil {
-		logrus.Errorf("failed to read data from connection: %v", err)
-		return gnet.Close
-	}
-
-	c.Write(data)
-
 	// // TODO 防止协程无限扩张
-	// // src -> dst
-	// go func() {
-	// 	io.Copy(connCtx.conn, c)
-	// }()
+	// src -> dst
+	go func() {
+		io.Copy(connCtx.conn, c)
+	}()
 
-	// // dst -> src
-	// go func() {
-	// 	io.Copy(c, connCtx.conn)
-	// }()
+	// dst -> src
+	go func() {
+		io.Copy(c, connCtx.conn)
+	}()
 
 	return
 }
