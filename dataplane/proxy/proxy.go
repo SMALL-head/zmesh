@@ -3,6 +3,8 @@ package proxy
 import (
 	"encoding/binary"
 	"fmt"
+	"time"
+
 	"github.com/panjf2000/gnet/v2"
 	"github.com/sirupsen/logrus"
 
@@ -46,7 +48,8 @@ func New(opts ...Option) *Proxy {
 }
 
 type ConnContext struct {
-	conn net.Conn
+	destAddr string
+	conn     net.Conn
 }
 
 func (p *Proxy) listenAddr() string {
@@ -79,26 +82,31 @@ func (p *Proxy) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 		return nil, gnet.Close
 	}
 	logrus.Infof("[OnOpen]: origin dst: %s", dst)
-	// connToRealEnd, err := net.DialTimeout("tcp", dst, 2*time.Second)
-	// if err != nil {
-	// 	logrus.Errorf("failed to connect to %v: %v", dst, err)
-	// 	return nil, gnet.Close
-	// }
 
-	// connCtx := ConnContext{conn: connToRealEnd}
-	// c.SetContext(connCtx)
+	connCtx := ConnContext{destAddr: dst}
+	c.SetContext(connCtx)
 	return
 }
 
 func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	// TODO 至真实服务器中
-	// logrus.Infof("[OnTraffic] - traffic on %s", c.RemoteAddr().String())
-	// cc := c.Context()
-	// connCtx, ok := cc.(ConnContext)
-	// if !ok {
-	// 	logrus.Errorf("failed to cast ConnContext to ConnContext")
-	// 	return gnet.Close
-	// }
+	cc := c.Context()
+	connCtx, ok := cc.(ConnContext)
+	if !ok {
+		logrus.Errorf("failed to cast ConnContext")
+		return gnet.Close
+	}
+
+	// 按需建立连接
+	if connCtx.conn == nil {
+		conn, err := net.DialTimeout("tcp", connCtx.destAddr, 2*time.Second)
+		if err != nil {
+			logrus.Errorf("failed to connect to %v: %v", connCtx.destAddr, err)
+			return gnet.Close
+		}
+		connCtx.conn = conn
+		c.SetContext(connCtx)
+	}
 
 	// // TODO 防止协程无限扩张
 	// // src -> dst
