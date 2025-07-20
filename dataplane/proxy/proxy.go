@@ -106,19 +106,25 @@ func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 			return gnet.Close
 		}
 		connCtx.conn = conn
+
+		// dst -> src 这里的映射只需要一次就行了
+		go func() {
+			io.Copy(c, connCtx.conn)
+		}()
 		c.SetContext(connCtx)
 	}
 
-	// // TODO 防止协程无限扩张
-	// src -> dst
-	go func() {
-		io.Copy(connCtx.conn, c)
-	}()
-
-	// dst -> src
-	go func() {
-		io.Copy(c, connCtx.conn)
-	}()
+	// 将data送到conn里面
+	data, err := c.Next(-1)
+	if err != nil {
+		logrus.Errorf("failed to read data from connection: %v", err)
+		return gnet.Close
+	}
+	_, err = connCtx.conn.Write(data)
+	if err != nil {
+		logrus.Errorf("failed to copy data to connection: %v", err)
+		return gnet.Close
+	}
 
 	return
 }
