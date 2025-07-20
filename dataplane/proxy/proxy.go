@@ -3,7 +3,6 @@ package proxy
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 
 	"github.com/panjf2000/gnet/v2"
 	"github.com/sirupsen/logrus"
@@ -108,9 +107,9 @@ func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		connCtx.conn = conn
 
 		// dst -> src 这里的映射只需要一次就行了
-		go func() {
-			io.Copy(c, connCtx.conn)
-		}()
+		// go func() {
+		// 	io.Copy(c, connCtx.conn)
+		// }()
 		c.SetContext(connCtx)
 	}
 
