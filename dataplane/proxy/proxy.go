@@ -73,7 +73,13 @@ func (p *Proxy) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	dst, _, _, err := getOriginDst(rawConnFd)
 	if err != nil {
 		logrus.Errorf("failed to get origin dst %v", err)
+		return nil, gnet.Close
 	}
+	if dst == "" {
+		logrus.Errorf("origin dst is empty")
+		return nil, gnet.Close
+	}
+	logrus.Infof("[OnOpen]: origin dst: %s", dst)
 	connToRealEnd, err := net.DialTimeout("tcp", dst, 2*time.Second)
 	if err != nil {
 		logrus.Errorf("failed to connect to %v: %v", dst, err)
@@ -86,7 +92,7 @@ func (p *Proxy) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 }
 
 func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
-	// TODO: 至真实服务器中
+	// TODO 至真实服务器中
 	cc := c.Context()
 	connCtx, ok := cc.(ConnContext)
 	if !ok {
@@ -94,7 +100,7 @@ func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		return gnet.Close
 	}
 
-	// TODO：防止协程无限扩张
+	// TODO 防止协程无限扩张
 	// src -> dst
 	go func() {
 		io.Copy(connCtx.conn, c)
@@ -131,7 +137,7 @@ func getOriginDst(fd int) (originDst string, host string, port uint16, err error
 	//addr, err := syscall.GetsockoptIPv6Mreq(int(clientConnFile.Fd()), syscall.IPPROTO_IPV6, IP6T_SO_ORIGINAL_DST)
 	// IPv4 address starts at the 5th byte, 4 bytes long (206 190 36 45)
 	var addr *syscall.IPv6Mreq
-	addr, err = syscall.GetsockoptIPv6Mreq(fd, syscall.IPPROTO_IPV4, SO_ORIGINAL_DST)
+	addr, err = syscall.GetsockoptIPv6Mreq(fd, syscall.IPPROTO_IP, SO_ORIGINAL_DST)
 	if err != nil {
 		//logrus.Errorf("[getOriginDst] - error getting SO_ORIGINAL_DST: %s", err)
 		return "", "", 0, err

@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-mesh
+  labels:
+    zmesh: "true"
+spec:
+  containers:
+  - name: mainn-container
+    image: registry.cn-shanghai.aliyuncs.com/carl-zyc/busybox:amd64v2
+    resources:
+      limits:
+        memory: "128Mi"
+        cpu: "500m"
+      requests:
+        memory: "64Mi"
+        cpu: "250m"
+    command: ["tail", "-f", "/dev/null"]
+  - name: sidecar-container
+    image: registry.cn-shanghai.aliyuncs.com/carl-zyc/godev:v1
+    resources:
+      limits:
+        memory: "1024Mi"
+        cpu: "1500m"
+      requests:
+        memory: "1024Mi"
+        cpu: "1500m"
+    command: ["tail", "-f", "/dev/null"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: server
+  labels:
+    app.kubernetes.io/name: server
+spec:
+  containers:
+  - name: server
+    image: registry.cn-shanghai.aliyuncs.com/carl-zyc/busybox:amd64v2
+    resources:
+      limits:
+        memory: "128Mi"
+        cpu: "500m"
+      requests:
+        memory: "64Mi"
+        cpu: "250m"
+    command: ["tail", "-f", "/dev/null"]
