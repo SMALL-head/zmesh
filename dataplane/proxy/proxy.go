@@ -114,7 +114,9 @@ func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	}
 
 	// 将data送到conn里面
-	data, err := c.Next(-1)
+
+	dataSize := c.InboundBuffered()
+	data, err := c.Next(dataSize)
 	if err != nil {
 		logrus.Errorf("failed to read data from connection: %v", err)
 		return gnet.Close
