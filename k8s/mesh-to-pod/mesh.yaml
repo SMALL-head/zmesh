@@ -7,7 +7,12 @@ metadata:
 spec:
   containers:
   - name: mainn-container
-    image: registry.cn-shanghai.aliyuncs.com/carl-zyc/busybox:amd64v2
+    image: registry.cn-shanghai.aliyuncs.com/carl-zyc/busybox:v3
+    securityContext:
+      capabilities:
+        add:
+          - NET_ADMIN
+          - NET_RAW
     resources:
       limits:
         memory: "128Mi"
@@ -17,6 +22,11 @@ spec:
         cpu: "250m"
     command: ["tail", "-f", "/dev/null"]
   - name: sidecar-container
+    securityContext:
+      capabilities:
+        add:
+          - NET_ADMIN
+          - NET_RAW
     image: registry.cn-shanghai.aliyuncs.com/carl-zyc/godev:v1
     resources:
       limits:
@@ -36,7 +46,12 @@ metadata:
 spec:
   containers:
   - name: server
-    image: registry.cn-shanghai.aliyuncs.com/carl-zyc/busybox:amd64v2
+    image: registry.cn-shanghai.aliyuncs.com/carl-zyc/busybox:v3
+    securityContext:
+      capabilities:
+        add:
+          - NET_ADMIN
+          - NET_RAW
     resources:
       limits:
         memory: "128Mi"

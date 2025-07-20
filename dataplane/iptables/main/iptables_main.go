@@ -10,8 +10,8 @@ func main() {
 	if err != nil {
 		logrus.Fatal("error creating iptables manager: ", err)
 	}
-	Scene1Clean(m)
-	// Scene1(m)
+	// Scene1Clean(m)
+	Scene1(m)
 	// Scene1Clean(m)
 }
 
@@ -30,7 +30,7 @@ func Scene1(m iptables.Manager) {
 	if err != nil {
 		logrus.Fatal("error setting up basic rules: ", err)
 	}
-	m.PodCIDR = "10.244.0.0/16"
+	m.PodCIDR = "10.10.0.0/16"
 
 	err = m.Ipt.AppendUnique(
 		"nat", iptables.MESH_OUPUT_CHAIN,

@@ -93,6 +93,7 @@ func (p *Proxy) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 
 func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	// TODO 至真实服务器中
+	logrus.Infof("[OnTraffic] - traffic on %s", c.RemoteAddr().String())
 	cc := c.Context()
 	connCtx, ok := cc.(ConnContext)
 	if !ok {
