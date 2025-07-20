@@ -129,6 +129,7 @@ func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 }
 
 func (p *Proxy) OnClose(c gnet.Conn, _ error) (action gnet.Action) {
+	logrus.Infof("closing connection on %s", c.RemoteAddr().String())
 	cc := c.Context()
 	connCtx, ok := cc.(ConnContext)
 	if !ok {
