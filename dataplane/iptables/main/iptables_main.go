@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os/user"
-
 	"github.com/SMALL-head/zmesh/dataplane/iptables"
 	"github.com/sirupsen/logrus"
 )
@@ -37,7 +35,7 @@ func Scene1(m iptables.Manager) {
 	err = m.Ipt.AppendUnique(
 		"nat", iptables.MESH_OUPUT_CHAIN,
 		"-p", "tcp",
-		"-m", "mark", "--mark", iptables.PROXY_PACKET_MARK,
+		"-m", "owner", "--uid-owner", "1337",
 		"-j", "RETURN",
 	)
 
@@ -50,7 +48,7 @@ func Scene1(m iptables.Manager) {
 		"nat", iptables.MESH_OUPUT_CHAIN,
 		"-p", "tcp",
 		"-d", m.PodCIDR,
-		"-m", "mark", "!", "--mark", iptables.PROXY_PACKET_MARK,
+		"!", "--sport", "8090", // 从proxy返回给src的流量不应该被重定向
 		"-j", "REDIRECT",
 		"--to-ports", "8090") // 转发流量至proxy
 
@@ -59,17 +57,6 @@ func Scene1(m iptables.Manager) {
 		return
 	}
 
-	err = m.Ipt.AppendUnique(
-		"mangle", "OUTPUT",
-		"-p", "tcp",
-		"--sport", "8090",
-		"-j", "MARK", "--set-mark", iptables.PROXY_PACKET_MARK,
-	)
-
-	if err != nil {
-		logrus.Errorf("[Scene1] error appending rule to mangle OUTPUT chain: %s", err)
-		return
-	}
 }
 
 func Scene1Clean(m iptables.Manager) {
