@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os/user"
+
 	"github.com/SMALL-head/zmesh/dataplane/iptables"
 	"github.com/sirupsen/logrus"
 )
@@ -35,13 +37,37 @@ func Scene1(m iptables.Manager) {
 	err = m.Ipt.AppendUnique(
 		"nat", iptables.MESH_OUPUT_CHAIN,
 		"-p", "tcp",
+		"-m", "mark", "--mark", iptables.PROXY_PACKET_MARK,
+		"-j", "RETURN",
+	)
+
+	if err != nil {
+		logrus.Errorf("[Scene1] error appending rule1 to MESH_OUTPUT_CHAIN: %s", err)
+		return
+	}
+
+	err = m.Ipt.AppendUnique(
+		"nat", iptables.MESH_OUPUT_CHAIN,
+		"-p", "tcp",
 		"-d", m.PodCIDR,
-		"!", "--dport", "8090", // 8090端口表示proxy本身的端口
-		"!", "--sport", "8090", // 防止重复拦截proxy的流量
+		"-m", "mark", "!", "--mark", iptables.PROXY_PACKET_MARK,
 		"-j", "REDIRECT",
 		"--to-ports", "8090") // 转发流量至proxy
+
 	if err != nil {
 		logrus.Errorf("[Scene1] error appending rule to MESH_OUTPUT_CHAIN: %s", err)
+		return
+	}
+
+	err = m.Ipt.AppendUnique(
+		"mangle", "OUTPUT",
+		"-p", "tcp",
+		"--sport", "8090",
+		"-j", "MARK", "--set-mark", iptables.PROXY_PACKET_MARK,
+	)
+
+	if err != nil {
+		logrus.Errorf("[Scene1] error appending rule to mangle OUTPUT chain: %s", err)
 		return
 	}
 }
@@ -69,6 +95,15 @@ func Scene1Clean(m iptables.Manager) {
 		if err != nil {
 			logrus.Errorf("[Scene1Clean] error deleting MESH_PREROUTING_CHAIN: %s", err)
 		}
+	}
+
+	ok, _ = m.Ipt.ChainExists("mangel", "OUTPUT")
+	if ok {
+		err := m.Ipt.ClearChain("mangle", "OUTPUT")
+		if err != nil {
+			logrus.Errorf("[Scene1Clean] error clearing mangle OUTPUT chain: %s", err)
+		}
+		// mangle OUTPUT是自带的Chain，就不删除了
 	}
 
 }

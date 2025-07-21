@@ -6,9 +6,16 @@ import (
 )
 
 var (
+	// Chain names
+
 	MESH_OUPUT_CHAIN      = "ZMESH_OUTPUT"
 	MESH_PREROUTING_CHAIN = "ZMESH_PREROUTING"
-	basicRules            = [][]string{
+
+	// MARK
+	PROXY_PACKET_MARK = "77"
+
+	// Basic rules for zmesh
+	basicRules = [][]string{
 		// jump rules
 		{"nat", "OUTPUT", "-p", "tcp", "-j", MESH_OUPUT_CHAIN},
 		{"nat", "PREROUTING", "-p", "tcp", "-j", MESH_PREROUTING_CHAIN},
