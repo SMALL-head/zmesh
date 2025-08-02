@@ -23,7 +23,7 @@ type Proxy struct {
 	Port     int
 	Protocol string
 
-	lock sync.Locker
+	lock sync.Mutex
 }
 
 type Option func(*Proxy)
