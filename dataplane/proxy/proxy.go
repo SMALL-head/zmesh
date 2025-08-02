@@ -3,6 +3,8 @@ package proxy
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
+	"sync"
 
 	"github.com/panjf2000/gnet/v2"
 	"github.com/sirupsen/logrus"
@@ -20,6 +22,8 @@ type Proxy struct {
 	Host     string
 	Port     int
 	Protocol string
+
+	lock sync.Locker
 }
 
 type Option func(*Proxy)
@@ -97,20 +101,38 @@ func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	}
 
 	// 按需建立连接
-	if connCtx.conn == nil {
-		d := &net.Dialer{}
-		conn, err := d.Dial("tcp", connCtx.destAddr)
-		if err != nil {
-			logrus.Errorf("failed to connect to %v: %v", connCtx.destAddr, err)
-			return gnet.Close
-		}
-		connCtx.conn = conn
+	// 这里使用function包起来的主要目的是为了lock的作用域
+	// 锁的竞争不会很激烈，因此这里不使用双重校验锁了
+	connErr := func() gnet.Action {
+		p.lock.Lock()
+		defer p.lock.Unlock()
+		if connCtx.conn == nil {
+			d := &net.Dialer{}
+			conn, err := d.Dial("tcp", connCtx.destAddr)
+			if err != nil {
+				logrus.Errorf("failed to connect to %v: %v", connCtx.destAddr, err)
+				// 远端异常回传给gnet
+				return gnet.Close
+			}
+			connCtx.conn = conn
 
-		// dst -> src 这里的映射只需要一次就行了
-		// go func() {
-		// 	io.Copy(c, connCtx.conn)
-		// }()
-		c.SetContext(connCtx)
+			// dst -> src 将实际的数据回传给gnet连接
+			go func() {
+				_, err = io.Copy(c, connCtx.conn)
+				if err != nil {
+					logrus.Errorf("failed to copy data from connection to gnet conn: %v", err)
+				} else {
+					logrus.Infoln("Connection closed normally")
+				}
+				logrus.Infof("connection to %s closed", connCtx.destAddr)
+			}()
+			c.SetContext(connCtx)
+		}
+		return gnet.None
+	}()
+
+	if connErr == gnet.Close {
+		return gnet.Close
 	}
 
 	// 将data送到conn里面
