@@ -21,7 +21,7 @@ func newCobraCommand() *cobra.Command {
 
 func run(cmd *cobra.Command, args []string) {
 	// 启动转发代理服务器
-	p := proxy.New(proxy.WithHost(""), proxy.WithPort(8090))
+	p := proxy.New(proxy.WithHost(""), proxy.WithPort(8090), proxy.WithMode(proxy.ProxyMode))
 
 	if err := p.Start(); err != nil {
 		logrus.Errorf("error starting proxy: %s", err)

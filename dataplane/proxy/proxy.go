@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 
 	"github.com/panjf2000/gnet/v2"
@@ -17,11 +18,19 @@ const (
 	SO_ORIGINAL_DST = 80
 )
 
+type Mode string
+
+const (
+	ProxyMode   Mode = "proxy"
+	SidecarMode Mode = "sidecar"
+)
+
 type Proxy struct {
 	gnet.EventHandler
 	Host     string
 	Port     int
 	Protocol string
+	mode     Mode
 
 	lock sync.Mutex
 }
@@ -37,6 +46,12 @@ func WithHost(host string) Option {
 func WithPort(port int) Option {
 	return func(p *Proxy) {
 		p.Port = port
+	}
+}
+
+func WithMode(mode Mode) Option {
+	return func(p *Proxy) {
+		p.mode = mode
 	}
 }
 
@@ -69,26 +84,25 @@ func (p *Proxy) Start() error {
 
 func (p *Proxy) OnBoot(eng gnet.Engine) (action gnet.Action) {
 	logrus.Infof("starting server on %s", p.listenAddr())
+	if p.mode != ProxyMode && p.mode != SidecarMode {
+		logrus.Errorf("invalid mode: %s, only support %s and %s",
+			p.mode, ProxyMode, SidecarMode)
+		return gnet.Shutdown
+	}
 	return
 }
 
 func (p *Proxy) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	logrus.Infof("opening connection on %s", c.RemoteAddr().String())
-	rawConnFd := c.Fd()
-	dst, _, _, err := getOriginDst(rawConnFd)
-	if err != nil {
-		logrus.Errorf("failed to get origin dst %v", err)
-		return nil, gnet.Close
+	switch p.mode {
+	case SidecarMode:
+		return sidecarModeOpenHandler(c)
+	case ProxyMode:
+		return proxyModeOpenHandler(c)
+	default:
+		logrus.Errorf("unsupported mode: %s", p.mode)
+		return nil, gnet.Shutdown
 	}
-	if dst == "" {
-		logrus.Errorf("origin dst is empty")
-		return nil, gnet.Close
-	}
-	logrus.Infof("[OnOpen]: origin dst: %s", dst)
-
-	connCtx := ConnContext{destAddr: dst}
-	c.SetContext(connCtx)
-	return
 }
 
 func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
@@ -103,37 +117,37 @@ func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	// 按需建立连接
 	// 这里使用function包起来的主要目的是为了lock的作用域
 	// 锁的竞争不会很激烈，因此这里不使用双重校验锁了
-	connErr := func() gnet.Action {
-		p.lock.Lock()
-		defer p.lock.Unlock()
-		if connCtx.conn == nil {
-			d := &net.Dialer{}
-			conn, err := d.Dial("tcp", connCtx.destAddr)
-			if err != nil {
-				logrus.Errorf("failed to connect to %v: %v", connCtx.destAddr, err)
-				// 远端异常回传给gnet
-				return gnet.Close
-			}
-			connCtx.conn = conn
+	// connErr := func() gnet.Action {
+	// 	p.lock.Lock()
+	// 	defer p.lock.Unlock()
+	// 	if connCtx.conn == nil {
+	// 		d := &net.Dialer{}
+	// 		conn, err := d.Dial("tcp", connCtx.destAddr)
+	// 		if err != nil {
+	// 			logrus.Errorf("failed to connect to %v: %v", connCtx.destAddr, err)
+	// 			// 远端异常回传给gnet
+	// 			return gnet.Close
+	// 		}
+	// 		connCtx.conn = conn
 
-			// dst -> src 将实际的数据回传给gnet连接
-			go func() {
-				_, err = io.Copy(c, connCtx.conn)
-				if err != nil {
-					logrus.Errorf("failed to copy data from connection to gnet conn: %v", err)
-				} else {
-					logrus.Infoln("Connection closed normally")
-				}
-				logrus.Infof("connection to %s closed", connCtx.destAddr)
-			}()
-			c.SetContext(connCtx)
-		}
-		return gnet.None
-	}()
+	// 		// dst -> src 将实际的数据回传给gnet连接
+	// 		go func() {
+	// 			_, err = io.Copy(c, connCtx.conn)
+	// 			if err != nil {
+	// 				logrus.Errorf("failed to copy data from connection to gnet conn: %v", err)
+	// 			} else {
+	// 				logrus.Infoln("Connection closed normally")
+	// 			}
+	// 			logrus.Infof("connection to %s closed", connCtx.destAddr)
+	// 		}()
+	// 		c.SetContext(connCtx)
+	// 	}
+	// 	return gnet.None
+	// }()
 
-	if connErr == gnet.Close {
-		return gnet.Close
-	}
+	// if connErr == gnet.Close {
+	// 	return gnet.Close
+	// }
 
 	// 将data送到conn里面
 
@@ -190,4 +204,82 @@ func getOriginDst(fd int) (originDst string, host string, port uint16, err error
 	originDst = fmt.Sprintf("%s:%d", host, port)
 
 	return originDst, host, port, nil
+}
+
+func sidecarModeOpenHandler(c gnet.Conn) (out []byte, action gnet.Action) {
+	rawConnFd := c.Fd()
+	dst, _, _, err := getOriginDst(rawConnFd)
+	if err != nil {
+		logrus.Errorf("failed to get origin dst %v", err)
+		return nil, gnet.Close
+	}
+	if dst == "" {
+		logrus.Errorf("origin dst is empty")
+		return nil, gnet.Close
+	}
+	logrus.Infof("[OnOpen]: origin dst: %s", dst)
+	// 设置连接上下文d := &net.Dialer{}
+
+	connCtx := ConnContext{destAddr: dst}
+	d := net.Dialer{}
+	conn, err := d.Dial("tcp", connCtx.destAddr)
+	if err != nil {
+		logrus.Errorf("failed to connect to %v: %v", connCtx.destAddr, err)
+		// 远端异常回传给gnet
+		return nil, gnet.Close
+	}
+	connCtx.conn = conn
+	go func() {
+		// dst -> src 将实际的数据回传给gnet连接
+		fd := c.Fd()
+		f := os.NewFile(uintptr(fd), "real-end")
+		if f == nil {
+			logrus.Errorf("failed to create os.File from fd %d", fd)
+			return
+		}
+
+		_, err = io.Copy(f, connCtx.conn)
+		if err != nil {
+			logrus.Errorf("failed to copy data from connection to gnet conn: %v", err)
+		} else {
+			logrus.Infoln("Connection closed normally")
+		}
+		logrus.Infof("connection to %s closed", connCtx.destAddr)
+		connCtx.conn.Close()
+	}()
+	c.SetContext(connCtx)
+	return
+}
+
+func proxyModeOpenHandler(c gnet.Conn) (out []byte, action gnet.Action) {
+	dst := "127.0.0.1:8888" // 该模式用作测试，这里直接写死
+	logrus.Infof("[OnOpen] - [proxyModeOpenHandler] - origin dst: %s", dst)
+	connCtx := ConnContext{destAddr: dst}
+	d := net.Dialer{}
+	conn, err := d.Dial("tcp", connCtx.destAddr)
+	if err != nil {
+		logrus.Errorf("[OnOpen] - [proxyModeOpenHandler] - failed to connect to %v: %v", connCtx.destAddr, err)
+		return nil, gnet.Close
+	}
+
+	connCtx.conn = conn
+	go func() {
+		fd := c.Fd()
+		f := os.NewFile(uintptr(fd), "real-end")
+		if f == nil {
+			logrus.Errorf("[OnOpen] - [proxyModeOpenHandler] - failed to create os.File from fd %d", fd)
+			return
+		}
+		_, err = io.Copy(f, connCtx.conn)
+		if err != nil {
+			logrus.Errorf("[OnOpen] - [proxyModeOpenHandler] - failed to copy data from connection to gnet conn: %v", err)
+		} else {
+			logrus.Infoln("[OnOpen] - [proxyModeOpenHandler] - Connection closed normally")
+		}
+		logrus.Infof("[OnOpen] - [proxyModeOpenHandler] - connection to %s closed", connCtx.destAddr)
+		connCtx.conn.Close()
+	}()
+
+	c.SetContext(connCtx)
+	return
 }
