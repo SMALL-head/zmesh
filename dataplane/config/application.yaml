@@ -1,0 +1,6 @@
+inbound:
+  port: 8091
+  mode: sidecar
+outbound:
+  port: 8090
+  mode: proxy

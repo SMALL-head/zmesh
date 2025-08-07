@@ -1,10 +1,12 @@
 package proxy
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"sync"
 
 	"github.com/panjf2000/gnet/v2"
@@ -25,6 +27,19 @@ const (
 	SidecarMode Mode = "sidecar"
 )
 
+const (
+	outBoundFileName = "o"
+	inBoundFileName  = "i"
+)
+
+type NoOpLogger struct{}
+
+func (l *NoOpLogger) Debugf(format string, args ...interface{}) {}
+func (l *NoOpLogger) Infof(format string, args ...interface{})  {}
+func (l *NoOpLogger) Warnf(format string, args ...interface{})  {}
+func (l *NoOpLogger) Errorf(format string, args ...interface{}) {}
+func (l *NoOpLogger) Fatalf(format string, args ...interface{}) {}
+
 type Proxy struct {
 	gnet.EventHandler
 	Host     string
@@ -33,6 +48,13 @@ type Proxy struct {
 	mode     Mode
 
 	lock sync.Mutex
+}
+
+type ProxyOutbound struct {
+	*Proxy
+}
+type ProxyInbound struct {
+	*Proxy
 }
 
 type Option func(*Proxy)
@@ -65,6 +87,16 @@ func New(opts ...Option) *Proxy {
 	return p
 }
 
+func NewProxyOutBound(opts ...Option) *ProxyOutbound {
+	p := New(opts...)
+	return &ProxyOutbound{Proxy: p}
+}
+
+func NewProxyInBound(opts ...Option) *ProxyInbound {
+	p := New(opts...)
+	return &ProxyInbound{Proxy: p}
+}
+
 type ConnContext struct {
 	destAddr string
 	conn     net.Conn
@@ -78,39 +110,52 @@ func (p *Proxy) listenAddr() string {
 	return fmt.Sprintf("%s://%s:%d", protocol, p.Host, p.Port)
 }
 
-func (p *Proxy) Start() error {
-	return gnet.Run(p, p.listenAddr(), gnet.WithMulticore(true))
+func (p *ProxyInbound) Start() error {
+	return gnet.Run(p, p.listenAddr(), gnet.WithMulticore(true), gnet.WithLogger(&NoOpLogger{}))
 }
 
-func (p *Proxy) OnBoot(eng gnet.Engine) (action gnet.Action) {
-	logrus.Infof("starting server on %s", p.listenAddr())
+func (p *ProxyOutbound) Start() error {
+	return gnet.Run(p, p.listenAddr(), gnet.WithMulticore(true), gnet.WithLogger(&NoOpLogger{}))
+}
+
+func (p *ProxyOutbound) OnBoot(eng gnet.Engine) (action gnet.Action) {
+	logrus.Infof("starting outbound server on %s", p.listenAddr())
 	if p.mode != ProxyMode && p.mode != SidecarMode {
 		logrus.Errorf("invalid mode: %s, only support %s and %s",
 			p.mode, ProxyMode, SidecarMode)
 		return gnet.Shutdown
 	}
+
+	// 启动一个协程监听系统信号，优雅关闭
+	go func() {
+		stopCh := make(chan os.Signal, 1)
+		signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
+		<-stopCh
+		_ = eng.Stop(context.TODO())
+	}()
+
 	return
 }
 
-func (p *Proxy) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
+func (p *ProxyOutbound) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	logrus.Infof("opening connection on %s", c.RemoteAddr().String())
 	switch p.mode {
 	case SidecarMode:
-		return sidecarModeOpenHandler(c)
+		return sidecarModeOpenHandler(c, outBoundFileName)
 	case ProxyMode:
-		return proxyModeOpenHandler(c)
+		return proxyModeOpenHandler(c, "127.0.0.1:8888") // 该模式用作测试，这里直接写死
 	default:
 		logrus.Errorf("unsupported mode: %s", p.mode)
 		return nil, gnet.Shutdown
 	}
 }
 
-func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
+func (p *ProxyOutbound) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	// TODO 至真实服务器中
 	cc := c.Context()
 	connCtx, ok := cc.(ConnContext)
 	if !ok {
-		logrus.Errorf("failed to cast ConnContext")
+		logrus.Errorf("[OutBoundOnTraffic] - failed to cast ConnContext")
 		return gnet.Close
 	}
 
@@ -150,34 +195,95 @@ func (p *Proxy) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	// }
 
 	// 将data送到conn里面
-
+	if connCtx.conn == nil {
+		logrus.Errorf("[OutBoundOnTraffic] - connection to %s is nil, cannot send data", connCtx.destAddr)
+		return gnet.Close
+	}
 	dataSize := c.InboundBuffered()
 	data, err := c.Next(dataSize)
 	if err != nil {
-		logrus.Errorf("failed to read data from connection: %v", err)
+		logrus.Errorf("[OutBoundOnTraffic] - failed to read data from connection: %v", err)
 		return gnet.Close
 	}
 	_, err = connCtx.conn.Write(data)
 	if err != nil {
-		logrus.Errorf("failed to copy data to connection: %v", err)
+		logrus.Errorf("[OutBoundOnTraffic] - failed to copy data to connection: %v", err)
 		return gnet.Close
 	}
 
 	return
 }
 
-func (p *Proxy) OnClose(c gnet.Conn, _ error) (action gnet.Action) {
+func (p *ProxyOutbound) OnClose(c gnet.Conn, _ error) (action gnet.Action) {
 	logrus.Infof("closing connection on %s", c.RemoteAddr().String())
 	cc := c.Context()
 	connCtx, ok := cc.(ConnContext)
 	if !ok {
-		logrus.Errorf("failed to cast ConnContext to ConnContext")
+		logrus.Errorf("[OutBoundOnClose] - failed to cast ConnContext to ConnContext")
 		return
 	}
 	if connCtx.conn != nil {
 		connCtx.conn.Close()
 	}
 
+	return
+}
+
+func (p *ProxyInbound) OnBoot(eng gnet.Engine) (action gnet.Action) {
+	logrus.Infof("starting inbound server on %s", p.listenAddr())
+	if p.mode != ProxyMode && p.mode != SidecarMode {
+		logrus.Errorf("invalid mode: %s, only support %s and %s",
+			p.mode, ProxyMode, SidecarMode)
+		return gnet.Shutdown
+	}
+
+	// 启动一个协程监听系统信号，优雅关闭
+	go func() {
+		stopCh := make(chan os.Signal, 1)
+		signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
+		<-stopCh
+		_ = eng.Stop(context.TODO())
+	}()
+
+	return
+}
+
+func (p *ProxyInbound) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
+	logrus.Infof("[InBoundOnOpen] - opening connection from %s", c.RemoteAddr().String())
+	switch p.mode {
+	case SidecarMode:
+		return sidecarModeOpenHandler(c, inBoundFileName)
+	case ProxyMode:
+		return proxyModeOpenHandler(c, "127.0.0.1:8888")
+	default:
+		logrus.Errorf("[InBoundOnOpen] - unsupported mode: %s", p.mode)
+		return nil, gnet.Close
+	}
+}
+
+func (p *ProxyInbound) OnTraffic(c gnet.Conn) (action gnet.Action) {
+	cc := c.Context()
+	connCtx, ok := cc.(ConnContext)
+	if !ok {
+		logrus.Errorf("[InBoundOnTraffic] - failed to cast ConnContext")
+		return gnet.Close
+	}
+	if connCtx.conn == nil {
+		logrus.Errorf("[InBoundOnTraffic] - connection to %s is nil, cannot send data", connCtx.destAddr)
+		return gnet.Close
+	}
+	dataSize := c.InboundBuffered()
+	data, err := c.Next(dataSize)
+	if err != nil {
+		logrus.Errorf("[InBoundOnTraffic] - failed to read data from connection: %v", err)
+		return gnet.Close
+	}
+
+	_, err = connCtx.conn.Write(data)
+	if err != nil {
+		logrus.Errorf("[InBoundOnTraffic] - failed to copy data to connection: %v", err)
+		return gnet.Close
+	}
 	return
 }
 
@@ -206,7 +312,8 @@ func getOriginDst(fd int) (originDst string, host string, port uint16, err error
 	return originDst, host, port, nil
 }
 
-func sidecarModeOpenHandler(c gnet.Conn) (out []byte, action gnet.Action) {
+// fileName用于表示基于 c gnet.Conn 打开的文件唯一标识
+func sidecarModeOpenHandler(c gnet.Conn, fileName string) (out []byte, action gnet.Action) {
 	rawConnFd := c.Fd()
 	dst, _, _, err := getOriginDst(rawConnFd)
 	if err != nil {
@@ -232,7 +339,7 @@ func sidecarModeOpenHandler(c gnet.Conn) (out []byte, action gnet.Action) {
 	go func() {
 		// dst -> src 将实际的数据回传给gnet连接
 		fd := c.Fd()
-		f := os.NewFile(uintptr(fd), "real-end")
+		f := os.NewFile(uintptr(fd), fileName)
 		if f == nil {
 			logrus.Errorf("failed to create os.File from fd %d", fd)
 			return
@@ -246,13 +353,13 @@ func sidecarModeOpenHandler(c gnet.Conn) (out []byte, action gnet.Action) {
 		}
 		logrus.Infof("connection to %s closed", connCtx.destAddr)
 		connCtx.conn.Close()
+		connCtx.conn = nil
 	}()
 	c.SetContext(connCtx)
 	return
 }
 
-func proxyModeOpenHandler(c gnet.Conn) (out []byte, action gnet.Action) {
-	dst := "127.0.0.1:8888" // 该模式用作测试，这里直接写死
+func proxyModeOpenHandler(c gnet.Conn, dst string) (out []byte, action gnet.Action) {
 	logrus.Infof("[OnOpen] - [proxyModeOpenHandler] - origin dst: %s", dst)
 	connCtx := ConnContext{destAddr: dst}
 	d := net.Dialer{}
@@ -278,6 +385,7 @@ func proxyModeOpenHandler(c gnet.Conn) (out []byte, action gnet.Action) {
 		}
 		logrus.Infof("[OnOpen] - [proxyModeOpenHandler] - connection to %s closed", connCtx.destAddr)
 		connCtx.conn.Close()
+		connCtx.conn = nil
 	}()
 
 	c.SetContext(connCtx)

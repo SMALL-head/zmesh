@@ -11,24 +11,26 @@ func main() {
 		logrus.Fatal("error creating iptables manager: ", err)
 	}
 	// Scene1Clean(m)
-	Scene1(m)
+	SceneOutBound(m)
 	// Scene1Clean(m)
 }
 
-func Scene1(m iptables.Manager) {
+func SceneOutBound(m iptables.Manager) {
+	// 注：数据包流出方向，首先经过四表的OUTPUT链。路由选择后走POSTROUTING链。
 	err := m.Ipt.NewChain("nat", iptables.MESH_OUPUT_CHAIN)
 	if err != nil {
 		logrus.Errorf("[Scene1] error creating MESH_OUTPUT_CHAIN: %s", err)
 		return
 	}
-	err = m.Ipt.NewChain("nat", iptables.MESH_PREROUTING_CHAIN)
+
+	// err = m.SetupBasicRules()
+	// if err != nil {
+	// 	logrus.Fatal("error setting up basic rules: ", err)
+	// }
+	err = m.Ipt.AppendUnique("nat", "OUTPUT", "-p", "tcp", "-j", iptables.MESH_OUPUT_CHAIN)
 	if err != nil {
-		logrus.Errorf("[Scene1] error creating MESH_PREROUTING_CHAIN: %s", err)
+		logrus.Errorf("[Scene1] error appending rule to OUTPUT chain: %s", err)
 		return
-	}
-	err = m.SetupBasicRules()
-	if err != nil {
-		logrus.Fatal("error setting up basic rules: ", err)
 	}
 	m.PodCIDR = "10.10.0.0/16"
 
@@ -59,7 +61,7 @@ func Scene1(m iptables.Manager) {
 
 }
 
-func Scene1Clean(m iptables.Manager) {
+func SceneOutBoundClean(m iptables.Manager) {
 	m.ClearBasicRules()
 	ok, _ := m.Ipt.ChainExists("nat", iptables.MESH_OUPUT_CHAIN)
 	if ok {
@@ -84,7 +86,7 @@ func Scene1Clean(m iptables.Manager) {
 		}
 	}
 
-	ok, _ = m.Ipt.ChainExists("mangel", "OUTPUT")
+	ok, _ = m.Ipt.ChainExists("mangle", "OUTPUT")
 	if ok {
 		err := m.Ipt.ClearChain("mangle", "OUTPUT")
 		if err != nil {
@@ -93,4 +95,45 @@ func Scene1Clean(m iptables.Manager) {
 		// mangle OUTPUT是自带的Chain，就不删除了
 	}
 
+}
+
+// SceneInbound 这个场景是为了测试Mesh2Mesh的转发逻辑
+func SceneInbound(m iptables.Manager) {
+	err := m.Ipt.NewChain("nat", iptables.MESH_PREROUTING_CHAIN)
+	if err != nil {
+		logrus.Errorf("[SceneInbound] error creating MESH_PREROUTING_CHAIN: %s", err)
+		return
+	}
+	err = m.Ipt.AppendUnique("nat", "PREROUTING", "-p", "tcp", "-j", iptables.MESH_PREROUTING_CHAIN)
+	if err != nil {
+		logrus.Errorf("[SceneInbound] error appending rule to PREROUTING chain: %s", err)
+		return
+	}
+
+	err = m.Ipt.AppendUnique("nat", iptables.MESH_PREROUTING_CHAIN,
+		"-p", "tcp",
+		"-d", m.PodCIDR,
+		"-j", "REDIRECT",
+		"--to-ports", "8092",
+	)
+	if err != nil {
+		logrus.Errorf("[SceneInbound] error appending rule to MESH_PREROUTING_CHAIN: %s", err)
+		return
+	}
+
+}
+
+func SceneInboundClean(m iptables.Manager) {
+	m.ClearBasicRules()
+	ok, _ := m.Ipt.ChainExists("nat", iptables.MESH_PREROUTING_CHAIN)
+	if ok {
+		err := m.Ipt.ClearChain("nat", iptables.MESH_PREROUTING_CHAIN)
+		if err != nil {
+			logrus.Errorf("[SceneInboundClean] error clearing MESH_PREROUTING_CHAIN: %s", err)
+		}
+		err = m.Ipt.DeleteChain("nat", iptables.MESH_PREROUTING_CHAIN)
+		if err != nil {
+			logrus.Errorf("[SceneInboundClean] error deleting MESH_PREROUTING_CHAIN: %s", err)
+		}
+	}
 }

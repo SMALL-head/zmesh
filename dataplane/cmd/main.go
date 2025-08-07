@@ -1,9 +1,11 @@
 package main
 
 import (
+	"github.com/SMALL-head/zmesh/dataplane/config"
 	"github.com/SMALL-head/zmesh/dataplane/proxy"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -20,11 +22,55 @@ func newCobraCommand() *cobra.Command {
 }
 
 func run(cmd *cobra.Command, args []string) {
+	eg := errgroup.Group{}
+	vCfg, err := config.ParseConfig()
+	if err != nil {
+		logrus.Fatal("error parsing config: ", err)
+	}
+	var oMode, iMode proxy.Mode
+	switch vCfg.OutBoundConfig.Mode {
+	case "sidecar":
+		oMode = proxy.SidecarMode
+	case "proxy":
+		oMode = proxy.ProxyMode
+	default:
+		logrus.Fatalf("invalid outbound mode: %s", vCfg.OutBoundConfig.Mode)
+	}
+	switch vCfg.InBoundConfig.Mode {
+	case "sidecar":
+		iMode = proxy.SidecarMode
+	case "proxy":
+		iMode = proxy.ProxyMode
+	default:
+		logrus.Fatalf("invalid inbound mode: %s", vCfg.InBoundConfig.Mode)
+	}
 	// 启动转发代理服务器
-	p := proxy.New(proxy.WithHost(""), proxy.WithPort(8090), proxy.WithMode(proxy.ProxyMode))
+	po := proxy.NewProxyOutBound(
+		proxy.WithHost(vCfg.OutBoundConfig.Host),
+		proxy.WithPort(vCfg.OutBoundConfig.Port),
+		proxy.WithMode(oMode),
+	)
+	pi := proxy.NewProxyInBound(
+		proxy.WithHost(vCfg.InBoundConfig.Host),
+		proxy.WithPort(vCfg.InBoundConfig.Port),
+		proxy.WithMode(iMode),
+	)
+	eg.Go(func() error {
+		if err := po.Start(); err != nil {
+			return err
+		}
+		return nil
+	})
 
-	if err := p.Start(); err != nil {
-		logrus.Errorf("error starting proxy: %s", err)
+	eg.Go(func() error {
+		if err := pi.Start(); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		logrus.Fatal("error running proxy: ", err)
 	}
 
 }
