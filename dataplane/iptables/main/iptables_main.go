@@ -10,9 +10,14 @@ func main() {
 	if err != nil {
 		logrus.Fatal("error creating iptables manager: ", err)
 	}
-	// Scene1Clean(m)
+
+	m.SetupBasicRules()
 	SceneOutBound(m)
-	// Scene1Clean(m)
+	SceneInbound(m)
+
+	// SceneOutBoundClean(m)
+	// SceneInboundClean(m)
+	// m.ClearBasicRules()
 }
 
 func SceneOutBound(m iptables.Manager) {
