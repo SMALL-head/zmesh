@@ -1,5 +1,5 @@
 inbound:
-  port: 8091
+  port: 8092
   mode: sidecar
 outbound:
   port: 8090

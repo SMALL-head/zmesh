@@ -37,6 +37,7 @@ func New(chainName string) (Manager, error) {
 	return Manager{
 		Ipt:       tables,
 		ChainName: chainName,
+		PodCIDR:   "10.10.0.0/16",
 	}, nil
 }
 
