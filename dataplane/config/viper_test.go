@@ -10,7 +10,7 @@ import (
 )
 
 func TestParseConfig(t *testing.T) {
-	cfg, err := config.ParseConfig()
+	cfg, err := config.ParseConfig("/root/zmesh/dataplane/application.yaml")
 	pwd, err := os.Getwd()
 	require.NoError(t, err)
 	fmt.Println("Current working directory:", pwd)

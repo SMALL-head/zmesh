@@ -5,15 +5,16 @@ import (
 	"github.com/spf13/viper"
 )
 
-func ParseConfig() (BootStrapConfig, error) {
+func ParseConfig(configPath string) (BootStrapConfig, error) {
 	// 解析配置文件
 	config := BootStrapConfig{}
 	// 这里可以添加实际的配置解析逻辑
 	v := viper.New()
-	v.AddConfigPath(".")
-	v.AddConfigPath("./config")
-	v.SetConfigName("application")
-	v.SetConfigType("yaml")
+	// v.AddConfigPath(".")
+	// v.AddConfigPath("./config")
+	// v.SetConfigName("application")
+	// v.SetConfigType("yaml")
+	v.SetConfigFile(configPath)
 	if err := v.ReadInConfig(); err != nil {
 		return config, err
 	}

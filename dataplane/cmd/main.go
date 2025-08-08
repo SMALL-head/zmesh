@@ -13,17 +13,23 @@ func main() {
 }
 
 func newCobraCommand() *cobra.Command {
+	var configPath string
+
 	command := &cobra.Command{
 		Use: "zmesh dataplane",
-		Run: run,
+		Run: func(cmd *cobra.Command, args []string) {
+			run(cmd, args, configPath)
+		},
 	}
+
+	command.Flags().StringVarP(&configPath, "config", "c", "", "指定配置文件路径")
 
 	return command
 }
 
-func run(cmd *cobra.Command, args []string) {
+func run(cmd *cobra.Command, args []string, configPath string) {
 	eg := errgroup.Group{}
-	vCfg, err := config.ParseConfig()
+	vCfg, err := config.ParseConfig(configPath)
 	if err != nil {
 		logrus.Fatal("error parsing config: ", err)
 	}

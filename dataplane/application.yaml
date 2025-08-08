@@ -3,4 +3,4 @@ inbound:
   mode: sidecar
 outbound:
   port: 8090
-  mode: proxy
+  mode: sidecar
