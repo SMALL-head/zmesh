@@ -46,6 +46,31 @@ func New(chainName string) (Manager, error) {
 
 // SetupBasicRules 创建zmesh所需要的基本规则
 func (m *Manager) SetupBasicRules() error {
+	// 创建必要的链条
+	if err := m.Ipt.NewChain("nat", MESH_OUPUT_CHAIN); err != nil {
+		logrus.Errorf("[SetupBasicRules] error creating MESH_OUTPUT_CHAIN: %s", err)
+		return err
+	}
+	if err := m.Ipt.NewChain("nat", MESH_PREROUTING_CHAIN); err != nil {
+		logrus.Errorf("[SetupBasicRules] error creating MESH_PREROUTING_CHAIN: %s", err)
+		m.Ipt.DeleteChain("nat", MESH_OUPUT_CHAIN)
+		return err
+	}
+	if err := m.Ipt.NewChain("mangle", MESH_OUPUT_CHAIN); err != nil {
+		logrus.Errorf("[SetupBasicRules] error creating MESH_OUPUT_CHAIN in mangle table: %s", err)
+		m.Ipt.DeleteChain("nat", MESH_PREROUTING_CHAIN)
+		m.Ipt.DeleteChain("nat", MESH_OUPUT_CHAIN)
+		return err
+	}
+	if err := m.Ipt.NewChain("mangle", MESH_PREROUTING_CHAIN); err != nil {
+		logrus.Errorf("[SetupBasicRules] error creating MESH_PREROUTING_CHAIN in mangle table: %s", err)
+		m.Ipt.DeleteChain("nat", MESH_PREROUTING_CHAIN)
+		m.Ipt.DeleteChain("nat", MESH_OUPUT_CHAIN)
+		m.Ipt.DeleteChain("mangle", MESH_OUPUT_CHAIN)
+		return err
+	}
+
+	// 基础跳转规则
 	for _, rule := range basicRules {
 		if err := m.Ipt.AppendUnique(rule[0], rule[1], rule[2:]...); err != nil {
 			return err
