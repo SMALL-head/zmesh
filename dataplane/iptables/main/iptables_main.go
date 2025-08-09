@@ -22,17 +22,19 @@ func main() {
 
 func SceneOutBound(m iptables.Manager) {
 	// 注：数据包流出方向，首先经过四表的OUTPUT链。路由选择后走POSTROUTING链。
-	err := m.Ipt.NewChain("nat", iptables.MESH_OUPUT_CHAIN)
-	if err != nil {
-		logrus.Errorf("[Scene1] error creating MESH_OUTPUT_CHAIN: %s", err)
-		return
+	if b, _ := m.Ipt.ChainExists("nat", iptables.MESH_OUPUT_CHAIN); !b {
+		err := m.Ipt.NewChain("nat", iptables.MESH_OUPUT_CHAIN)
+		if err != nil {
+			logrus.Errorf("[Scene1] error creating MESH_OUTPUT_CHAIN: %s", err)
+			return
+		}
 	}
 
 	// err = m.SetupBasicRules()
 	// if err != nil {
 	// 	logrus.Fatal("error setting up basic rules: ", err)
 	// }
-	err = m.Ipt.AppendUnique("nat", "OUTPUT", "-p", "tcp", "-j", iptables.MESH_OUPUT_CHAIN)
+	err := m.Ipt.AppendUnique("nat", "OUTPUT", "-p", "tcp", "-j", iptables.MESH_OUPUT_CHAIN)
 	if err != nil {
 		logrus.Errorf("[Scene1] error appending rule to OUTPUT chain: %s", err)
 		return
@@ -129,12 +131,14 @@ func SceneOutBoundClean(m iptables.Manager) {
 
 // SceneInbound 这个场景是为了测试Mesh2Mesh的转发逻辑
 func SceneInbound(m iptables.Manager) {
-	err := m.Ipt.NewChain("nat", iptables.MESH_PREROUTING_CHAIN)
-	if err != nil {
-		logrus.Errorf("[SceneInbound] error creating MESH_PREROUTING_CHAIN: %s", err)
-		return
+	if b, _ := m.Ipt.ChainExists("nat", iptables.MESH_PREROUTING_CHAIN); !b {
+		err := m.Ipt.NewChain("nat", iptables.MESH_PREROUTING_CHAIN)
+		if err != nil {
+			logrus.Errorf("[SceneInbound] error creating MESH_PREROUTING_CHAIN: %s", err)
+			return
+		}
 	}
-	err = m.Ipt.AppendUnique("nat", "PREROUTING", "-p", "tcp", "-j", iptables.MESH_PREROUTING_CHAIN)
+	err := m.Ipt.AppendUnique("nat", "PREROUTING", "-p", "tcp", "-j", iptables.MESH_PREROUTING_CHAIN)
 	if err != nil {
 		logrus.Errorf("[SceneInbound] error appending rule to PREROUTING chain: %s", err)
 		return
