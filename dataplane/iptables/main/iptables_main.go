@@ -118,6 +118,22 @@ func SceneOutBoundClean(m iptables.Manager) {
 		}
 	}
 
+	ok, _ = m.Ipt.ChainExists("mangle", iptables.MESH_OUPUT_CHAIN)
+	if ok {
+		err := m.Ipt.ClearChain("mangle", iptables.MESH_OUPUT_CHAIN)
+		if err != nil {
+			logrus.Errorf("[Scene1Clean] error clearing mangle MESH_OUTPUT_CHAIN: %s", err)
+		}
+	}
+
+	ok, _ = m.Ipt.ChainExists("mangle", iptables.MESH_PREROUTING_CHAIN)
+	if ok {
+		err := m.Ipt.ClearChain("mangle", iptables.MESH_PREROUTING_CHAIN)
+		if err != nil {
+			logrus.Errorf("[Scene1Clean] error clearing mangle MESH_PREROUTING_CHAIN: %s", err)
+		}
+	}
+
 	ok, _ = m.Ipt.ChainExists("mangle", "OUTPUT")
 	if ok {
 		err := m.Ipt.ClearChain("mangle", "OUTPUT")

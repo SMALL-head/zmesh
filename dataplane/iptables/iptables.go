@@ -70,6 +70,18 @@ func (m *Manager) SetupBasicRules() error {
 }
 
 func (m *Manager) ClearBasicRules() {
+	if b, _ := m.Ipt.ChainExists("nat", MESH_OUPUT_CHAIN); b {
+		m.Ipt.DeleteChain("nat", MESH_OUPUT_CHAIN)
+	}
+	if b, _ := m.Ipt.ChainExists("nat", MESH_PREROUTING_CHAIN); b {
+		m.Ipt.DeleteChain("nat", MESH_PREROUTING_CHAIN)
+	}
+	if b, _ := m.Ipt.ChainExists("mangle", MESH_OUPUT_CHAIN); b {
+		m.Ipt.DeleteChain("mangle", MESH_OUPUT_CHAIN)
+	}
+	if b, _ := m.Ipt.ChainExists("mangle", MESH_PREROUTING_CHAIN); b {
+		m.Ipt.DeleteChain("mangle", MESH_PREROUTING_CHAIN)
+	}
 	for _, rule := range basicRules {
 		err := m.Ipt.Delete(rule[0], rule[1], rule[2:]...)
 		if err != nil {
