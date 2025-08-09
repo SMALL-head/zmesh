@@ -60,3 +60,18 @@ spec:
         memory: "64Mi"
         cpu: "250m"
     command: ["tail", "-f", "/dev/null"]
+  - name: sidecar-container
+    image: registry.cn-shanghai.aliyuncs.com/carl-zyc/godev:v1
+    securityContext:
+      capabilities:
+        add:
+          - NET_ADMIN
+          - NET_RAW
+    resources:
+      limits:
+        memory: "1024Mi"
+        cpu: "1500m"
+      requests:
+        memory: "1024Mi"
+        cpu: "1500m"
+    command: ["tail", "-f", "/dev/null"]

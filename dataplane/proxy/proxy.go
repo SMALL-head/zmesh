@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"time"
 
 	"github.com/panjf2000/gnet/v2"
 	"github.com/sirupsen/logrus"
@@ -328,7 +329,9 @@ func sidecarModeOpenHandler(c gnet.Conn, fileName string) (out []byte, action gn
 	// 设置连接上下文d := &net.Dialer{}
 
 	connCtx := ConnContext{destAddr: dst}
-	d := net.Dialer{}
+	d := net.Dialer{
+		Timeout: 5 * time.Second,
+	}
 	conn, err := d.Dial("tcp", connCtx.destAddr)
 	if err != nil {
 		logrus.Errorf("failed to connect to %v: %v", connCtx.destAddr, err)

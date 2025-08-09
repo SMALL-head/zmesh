@@ -12,13 +12,16 @@ var (
 	MESH_PREROUTING_CHAIN = "ZMESH_PREROUTING"
 
 	// MARK
-	PROXY_PACKET_MARK = "77"
+	PROXY_PACKET_MARK       = "77"
+	OUTBOUND_CONNTRACK_MARK = "0x43"
 
 	// Basic rules for zmesh
 	basicRules = [][]string{
 		// jump rules
 		{"nat", "OUTPUT", "-p", "tcp", "-j", MESH_OUPUT_CHAIN},
 		{"nat", "PREROUTING", "-p", "tcp", "-j", MESH_PREROUTING_CHAIN},
+		{"mangle", "PREROUTING", "-p", "tcp", "-j", MESH_PREROUTING_CHAIN},
+		{"mangle", "OUTPUT", "-p", "tcp", "-j", MESH_OUPUT_CHAIN},
 	}
 )
 
