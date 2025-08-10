@@ -25,7 +25,7 @@ func SceneOutBound(m iptables.Manager) {
 	if b, _ := m.Ipt.ChainExists("nat", iptables.MESH_OUPUT_CHAIN); !b {
 		err := m.Ipt.NewChain("nat", iptables.MESH_OUPUT_CHAIN)
 		if err != nil {
-			logrus.Errorf("[Scene1] error creating MESH_OUTPUT_CHAIN: %s", err)
+			logrus.Errorf("[SceneOutBound] error creating MESH_OUTPUT_CHAIN: %s", err)
 			return
 		}
 	}
@@ -36,7 +36,7 @@ func SceneOutBound(m iptables.Manager) {
 	// }
 	err := m.Ipt.AppendUnique("nat", "OUTPUT", "-p", "tcp", "-j", iptables.MESH_OUPUT_CHAIN)
 	if err != nil {
-		logrus.Errorf("[Scene1] error appending rule to OUTPUT chain: %s", err)
+		logrus.Errorf("[SceneOutBound] error appending rule to OUTPUT chain: %s", err)
 		return
 	}
 	m.PodCIDR = "10.10.0.0/16"
@@ -49,7 +49,7 @@ func SceneOutBound(m iptables.Manager) {
 	)
 
 	if err != nil {
-		logrus.Errorf("[Scene1] error appending rule1 to MESH_OUTPUT_CHAIN: %s", err)
+		logrus.Errorf("[SceneOutBound] error appending rule1 to MESH_OUTPUT_CHAIN: %s", err)
 		return
 	}
 
@@ -62,9 +62,11 @@ func SceneOutBound(m iptables.Manager) {
 		"--to-ports", "8090") // 转发流量至proxy
 
 	if err != nil {
-		logrus.Errorf("[Scene1] error appending rule to MESH_OUTPUT_CHAIN: %s", err)
+		logrus.Errorf("[SceneOutBound] error appending rule to MESH_OUTPUT_CHAIN: %s", err)
 		return
 	}
+
+	// 下一个规则的反条件，对于特定的数据包，不要打OUTBOUND_CONNTRACK_MARK标记
 
 	// output方，对于新建立的连接，打上某个特定的标记
 	err = m.Ipt.AppendUnique(
@@ -75,19 +77,31 @@ func SceneOutBound(m iptables.Manager) {
 		"-j", "CONNMARK", "--set-mark", iptables.OUTBOUND_CONNTRACK_MARK,
 	)
 	if err != nil {
-		logrus.Errorf("[Scene1] error appending rule to mangle MESH_OUTPUT_CHAIN: %s", err)
+		logrus.Errorf("[SceneOutBound] error appending rule to mangle MESH_OUTPUT_CHAIN: %s", err)
 		return
 	}
 
 	// 收到流量后，恢复这个标记，然后后续inbound规则对于拥有该标记的流不进行redirect处理
 	// 虽然这里是处理的事inbound流量，但是我仍然把它写在SceneOutBound里，
 	// 因为它是和outbound的conntrack标记配合使用的。或者说这个规则被触发的前提是outbound发出流量
+
+	err = m.Ipt.AppendUnique(
+		"mangle", iptables.MESH_PREROUTING_CHAIN,
+		"-p", "tcp",
+		"!", "--sport", "8092",
+		"-j", "RETURN",
+	) // mesh -> mesh，inBound那边不打标，因为这个in流量始终要转发至对端sidecar中
+	if err != nil {
+		logrus.Errorf("[SceneOutBound] error appending rule to mangle MESH_PREROUTING_CHAIN: %s", err)
+		return
+	}
+
 	err = m.Ipt.AppendUnique(
 		"mangle", iptables.MESH_PREROUTING_CHAIN,
 		"-j", "CONNMARK", "--restore-mark",
 	)
 	if err != nil {
-		logrus.Errorf("[Scene1] error appending rule to mangle MESH_PREROUTING_CHAIN: %s", err)
+		logrus.Errorf("[SceneOutBound] error appending rule to mangle MESH_PREROUTING_CHAIN: %s", err)
 		return
 	}
 
