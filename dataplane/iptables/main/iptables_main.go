@@ -11,13 +11,8 @@ func main() {
 		logrus.Fatal("error creating iptables manager: ", err)
 	}
 
-	m.SetupBasicRules()
-	SceneOutBound(m)
-	SceneInbound(m)
-
-	// SceneOutBoundClean(m)
-	// SceneInboundClean(m)
-	// m.ClearBasicRules()
+	DefaultSidecarRule(m)
+	// DefaultSidecarRuleClean(m)
 }
 
 func SceneOutBound(m iptables.Manager) {
@@ -201,4 +196,16 @@ func SceneInboundClean(m iptables.Manager) {
 			logrus.Errorf("[SceneInboundClean] error deleting MESH_PREROUTING_CHAIN: %s", err)
 		}
 	}
+}
+
+func DefaultSidecarRule(m iptables.Manager) {
+	m.SetupBasicRules()
+	SceneOutBound(m)
+	SceneInbound(m)
+}
+
+func DefaultSidecarRuleClean(m iptables.Manager) {
+	SceneOutBoundClean(m)
+	SceneInboundClean(m)
+	m.ClearBasicRules()
 }

@@ -1,0 +1,96 @@
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: envoy-debug-server
+  namespace: default
+spec:
+  containers:
+  - name: config-container
+    securityContext:
+      capabilities:
+        add:
+          - NET_ADMIN
+          - NET_RAW
+    image: registry.cn-shanghai.aliyuncs.com/carl-zyc/godev:v1
+    resources:
+      limits:
+        memory: "1024Mi"
+        cpu: "1500m"
+      requests:
+        memory: "1024Mi"
+        cpu: "1500m"
+    command: ["tail", "-f", "/dev/null"]
+
+  - name: envoy
+    image: envoyproxy/envoy:v1.32-latest
+    securityContext:
+      runAsUser: 1337
+      runAsGroup: 1337  # 组ID 0是root组，给予root组权限
+      runAsNonRoot: false
+      # capabilities:
+      #   add:
+      #   - NET_ADMIN
+      #   - NET_RAW
+    command: ["/usr/local/bin/envoy"]
+    args:
+    - --config-path
+    - /etc/envoy/bootstrap.yaml
+    - --log-level
+    - info
+    ports:
+    - containerPort: 8090
+      name: outbound
+    - containerPort: 8092
+      name: inbound
+    volumeMounts:
+    - name: envoy-config
+      mountPath: /etc/envoy
+    resources:
+      limits:
+        cpu: "2"
+        memory: "1024Mi"
+      requests:
+        cpu: "1"
+        memory: "1024Mi"
+    # livenessProbe:
+    #   httpGet:
+    #     path: /ready
+    #     port: 15000
+    #   initialDelaySeconds: 5
+    #   periodSeconds: 10
+    # readinessProbe:
+    #   httpGet:
+    #     path: /ready
+    #     port: 15000
+    #   initialDelaySeconds: 5
+    #   periodSeconds: 10
+      
+  - name: debug-tools
+    image: registry.cn-shanghai.aliyuncs.com/carl-zyc/busybox:v3
+    securityContext:
+      privileged: true  # 给予特权模式
+      capabilities:
+        add:
+        - NET_ADMIN
+        - NET_RAW
+    command: ["tail", "-f", "/dev/null"]
+    resources:
+      limits:
+        cpu: "2"
+        memory: "512Mi"
+      requests:
+        cpu: "1"
+        memory: "512Mi"
+    volumeMounts:
+    - name: envoy-config
+      mountPath: /etc/envoy
+      readOnly: true  # 调试容器只需要读取权限
+      
+  volumes:
+  - name: envoy-config
+    configMap:
+      name: envoy-config
+      items:
+      - key: bootstrap.yaml
+        path: bootstrap.yaml
